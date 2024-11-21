@@ -1,6 +1,7 @@
 #pragma once
 
 #include "wled.h"
+#include <Arduino.h>
 
 //
 // Inspired by the original v2 usermods
@@ -34,15 +35,15 @@
 #endif
 
 #ifndef ENCODER_DT_PIN
-#define ENCODER_DT_PIN 18
+#define ENCODER_DT_PIN 25
 #endif
 
 #ifndef ENCODER_CLK_PIN
-#define ENCODER_CLK_PIN 5
+#define ENCODER_CLK_PIN 26
 #endif
 
 #ifndef ENCODER_SW_PIN
-#define ENCODER_SW_PIN 19
+#define ENCODER_SW_PIN 33
 #endif
 
 #ifndef ENCODER_MAX_DELAY_MS    // max delay between polling encoder pins
@@ -74,6 +75,10 @@
 
 // Number of modes at the start of the list to not sort
 #define MODE_SORT_SKIP_COUNT 1
+
+#define RedLedPin 14
+#define GreenLedPin 27
+#define BlueLedPin 32
 
 // Which list is being sorted
 static const char **listBeingSorted;
@@ -209,7 +214,14 @@ class RotaryEncoderUIUsermod : public Usermod {
     bool enabled;
 
     bool usePcf8574;
+
     int8_t pinIRQ;
+
+    int redValue;
+    int greenValue;
+    int blueValue;
+
+    int step;
 
     // strings to reduce flash memory usage (used more than twice)
     static const char _name[];
@@ -279,6 +291,10 @@ class RotaryEncoderUIUsermod : public Usermod {
       , enabled(true)
       , usePcf8574(USE_PCF8574)
       , pinIRQ(PCF8574_INT_PIN)
+      , redValue(0)
+      , greenValue(0)
+      , blueValue(0)
+      , step(0)
     {}
 
     /*
@@ -483,6 +499,17 @@ void RotaryEncoderUIUsermod::setup()
 {
   DEBUG_PRINTLN(F("Usermod Rotary Encoder init."));
 
+  const int freq = 5000;
+  const int resolution = 8;
+
+  ledcAttachPin(RedLedPin, 0);
+  ledcAttachPin(GreenLedPin, 1);
+  ledcAttachPin(BlueLedPin, 2);
+
+  ledcSetup(0, freq, resolution);
+  ledcSetup(1, freq, resolution);
+  ledcSetup(2, freq, resolution);
+
   if (usePcf8574) {
     if (i2c_sda < 0 || i2c_scl < 0 || pinA < 0 || pinB < 0 || pinC < 0) {
       DEBUG_PRINTLN(F("I2C and/or PCF8574 pins unused, disabling."));
@@ -573,15 +600,23 @@ void RotaryEncoderUIUsermod::loop()
       if (!buttonPressedBefore) buttonPressedTime = currentTime;
       buttonPressedBefore = true;
       if (currentTime-buttonPressedTime > 3000) {
-        if (!buttonLongPressed) displayNetworkInfo(); //long press for network info
+        if (!buttonLongPressed){
+          Serial.printf("-Long-\n");
+          toggleOnOff();
+          } //long press for network info
         buttonLongPressed = true;
       }
     } else if (!buttonPressed && buttonPressedBefore) {
       bool doublePress = buttonWaitTime;
       buttonWaitTime = 0;
       if (!buttonLongPressed) {
+          Serial.printf("-Single-\n");
+          step++;
+        
         if (doublePress) {
-          toggleOnOff();
+          displayNetworkInfo();
+          Serial.printf("-Double-\n");
+
           lampUdated();
         } else {
           buttonWaitTime = currentTime;
@@ -599,8 +634,8 @@ void RotaryEncoderUIUsermod::loop()
         // find new state
         switch (newState) {
           case  0: strcpy_P(lineBuffer, PSTR("Brightness")); changedState = true; break;
-          case  1: if (!extractModeSlider(effectCurrent, 0, lineBuffer, 63)) newState++; else changedState = true; break; // speed
-          case  2: if (!extractModeSlider(effectCurrent, 1, lineBuffer, 63)) newState++; else changedState = true; break; // intensity
+          case  1: if (/*!extractModeSlider(effectCurrent, 0, lineBuffer, 63)*/ true) newState++; else changedState = true; break; // speed
+          case  2: if (/*!extractModeSlider(effectCurrent, 1, lineBuffer, 63)*/ true) newState++; else changedState = true; break; // intensity
           case  3: strcpy_P(lineBuffer, PSTR("Color Palette")); changedState = true; break;
           case  4: strcpy_P(lineBuffer, PSTR("Effect")); changedState = true; break;
           case  5: strcpy_P(lineBuffer, PSTR("Main Color")); changedState = true; break;
@@ -677,6 +712,23 @@ void RotaryEncoderUIUsermod::loop()
     Enc_A_prev = Enc_A;     // Store value of A for next time
     loopTime = currentTime; // Updates loopTime
   }
+    if(step % 3 == 0){
+      redValue = 255;
+      greenValue = 255;
+      blueValue = 0;
+    }else if(step % 3 == 1){
+      redValue = 0;
+      greenValue = 255;
+      blueValue = 255;
+    }else if(step % 3 == 2){
+      redValue = 255;
+      greenValue = 0;
+      blueValue = 255;
+    }
+    
+  ledcWrite(0, redValue/2);
+  ledcWrite(1, greenValue/2);
+  ledcWrite(2, blueValue/2);
 }
 
 void RotaryEncoderUIUsermod::displayNetworkInfo() {
